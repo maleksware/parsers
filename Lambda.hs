@@ -51,12 +51,16 @@ satisfy pred = Parser $ \inp ->
 charP :: Char -> Parser Char
 charP c = satisfy (==c)
 
+sepBySome :: Parser a -> Parser b -> Parser [a]
+sepBySome p sp = (:) <$> p <*> many (sp *> p)
+
 -- It is unclear how to efficiently parse trailing separators as opposed to leading.
 -- sepBy p sp = many (p <* sp) <|> (++) <$> many (p <* sp) <*> (pure <$> p) <|> pure []
 -- is an implementation that should do the trick, but it is inefficient in many ways
 -- (the most obvious being the ++)
 sepBy :: Parser a -> Parser b -> Parser [a]
-sepBy p sp = (:) <$> p <*> many (sp *> p) <|> pure []
+sepBy p sp = sepBySome p sp <|> pure []
+
 
 stringP :: String -> Parser String
 stringP = traverse (\c -> satisfy (==c))
@@ -82,13 +86,18 @@ abstraction = (\_ v _ e -> Abs v e) <$> charP lambda <* ws
                                     <*> expression
 
 application :: Parser LExpr
-application = foldl1 App <$> sepBy term (some $ satisfy isSpace)
+application = foldl1 App <$> terms
+  where terms = sepBySome term (some $ satisfy isSpace)
 
 grouping :: Parser LExpr
 grouping = charP '(' *> expression <* charP ')'
 
 expression :: Parser LExpr
-expression = application <|> term
+expression = application
+-- Can be expression = application <|> term,
+-- but if application fails to parse more than 1 term,
+-- foldl1 returns the element without injecting App,
+-- so the check for the individual term is redundant.
 
 formatExpr :: LExpr -> String
 formatExpr expr = case expr of
